@@ -26,7 +26,6 @@ import {
   subscribeCache,
 } from "./cache";
 import { assign, cloneDeep, isArray } from "lodash-es";
-import { DBRecord, insert } from "./db";
 
 // 用于收集对某个key的缓存
 const CACHE_REVIDATE_POOL: Record<
@@ -52,7 +51,11 @@ type UseFetchOption<T> = {
 
   fineGrainedIter?: (
     data: T
-  ) => Iterable<{ tableName: string; record: unknown }>;
+  ) => Generator<
+    { cacheKey: string; record: Record<string, any> },
+    void,
+    undefined
+  >;
 };
 const DEFAULT_OPTIONS = {
   autoRefresh: false,
@@ -139,16 +142,11 @@ function useFetch<T>(
           if (options?.fineGrainedIter) {
             // 这个cache的内容将是其他cache
             // 每个data内部都清空了， 填入所依赖的cacheKey
-            for (
-              let i = 0, l = (data as any as Array<any>).length;
-              i < l;
-              i += 1
-            ) {
-              const fineGrainedData = (data as any as Array<any>)[i];
-              const fineGrainedCacheKey = `users/1/todos/${fineGrainedData.id}`;
-
+            for (const {
+              record: fineGrainedData,
+              cacheKey: fineGrainedCacheKey,
+            } of options.fineGrainedIter(data)) {
               const fineGrainedCache = readCache<unknown>(fineGrainedCacheKey);
-
               // 当内部缓存发生变化时， 外部缓存进行脏检查， 当然这时一定是脏的
               subscribeCache(fineGrainedCacheKey, () => {
                 innerMutateCache(
@@ -180,6 +178,7 @@ function useFetch<T>(
                 }
               });
             }
+
             innerMutateCache(
               cacheKey,
               {
@@ -316,13 +315,17 @@ function useFetch<T>(
         // 检查是否存在__cache_key__, 如果存在则填充
 
         if (cache?.data) {
-          const _data = cloneDeep(cache.data) as any;
-          for (let i = 0, l = _data.length; i < l; i += 1) {
-            const innerData = readCache(_data[i]["__cache_key__"]).data;
-            assign(_data[i], innerData);
+          if (options?.fineGrainedIter) {
+            const _data = cloneDeep(cache.data);
+            for (const { record, cacheKey } of options.fineGrainedIter(_data)) {
+              const innerData = readCache(record["__cache_key__"]).data;
+              assign(record, innerData);
+            }
+
+            return _data;
           }
 
-          return _data;
+          return cache.data;
         }
 
         return null;

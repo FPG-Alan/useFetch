@@ -14,7 +14,11 @@ function App() {
     API,
     (api) => fetch(api).then((res) => res.json()),
     {
-      fineGrainedIter: () => {},
+      fineGrainedIter: function* (data) {
+        for (let i = 0, l = data.length; i < l; i += 1) {
+          yield { record: data[i], cacheKey: `users/1/todos/${data[i].id}` };
+        }
+      },
     }
   );
 
