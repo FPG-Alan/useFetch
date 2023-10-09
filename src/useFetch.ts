@@ -26,7 +26,7 @@ import {
   refreshCache,
   readCacheListeners,
 } from "./cache";
-import { assign, cloneDeep, isArray } from "lodash-es";
+import { assign, cloneDeep, get, isArray, set } from "lodash-es";
 
 // 用于收集对某个key的缓存
 const CACHE_REVIDATE_POOL: Record<
@@ -51,11 +51,7 @@ type UseFetchOption<T> = {
 
   fineGrainedIter?: (
     data: T
-  ) => Generator<
-    { cacheKey: string; record: Record<string, any> },
-    void,
-    undefined
-  >;
+  ) => Generator<{ cacheKey: string; path: string }, void, undefined>;
 };
 const DEFAULT_OPTIONS = {
   autoRefresh: false,
@@ -143,9 +139,10 @@ function useFetch<T>(
             // 这个cache的内容将是其他cache
             // 每个data内部都清空了， 填入所依赖的cacheKey
             for (const {
-              record: fineGrainedData,
+              path,
               cacheKey: fineGrainedCacheKey,
             } of options.fineGrainedIter(data)) {
+              const fineGrainedData = get(data, path);
               // 内部任何一个缓存发生变化， 外部cache的观察者都会被通知
               // 但这个订阅应该只发生一次
               const fineGrainedCache = readCache<unknown>(
@@ -166,20 +163,13 @@ function useFetch<T>(
                 {
                   ...fineGrainedCache,
                   loading: false,
-                  // cloneDeep是否很耗时? 能否避免?
-                  data: cloneDeep(fineGrainedData),
+                  data: fineGrainedData,
                 },
                 true
               );
 
-              // 问题是如何处理外部缓存中的数据
-              // 现在只知道外部缓存依赖了哪些内部缓存(fineGrainedCacheKey集合)， 但内部缓存和数据中具体的部分没有关系
-              fineGrainedData["__cache_key__"] = fineGrainedCacheKey;
-
-              Object.keys(fineGrainedData).forEach((key) => {
-                if (key !== "__cache_key__") {
-                  delete fineGrainedData[key];
-                }
+              set(data as any as object, path, {
+                __cache_key__: fineGrainedCacheKey,
               });
             }
 
@@ -322,8 +312,10 @@ function useFetch<T>(
         if (cache?.data) {
           if (options?.fineGrainedIter) {
             const _data = cloneDeep(cache.data);
-            for (const { record, cacheKey } of options.fineGrainedIter(_data)) {
-              const innerData = readCache(record["__cache_key__"]).data;
+            for (const { path, cacheKey } of options.fineGrainedIter(_data)) {
+              const record = get(_data, path);
+              const innerData = readCache(record["__cache_key__"]).data || {};
+
               assign(record, innerData);
             }
 
