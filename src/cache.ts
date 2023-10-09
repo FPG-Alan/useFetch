@@ -23,12 +23,19 @@ const MEM_CACHE: LRUMap<string, Cache<any>> = new LRUMap(500);
 const CACHE_LISTENERS: Record<string, Array<CacheListener>> = {};
 
 (window as any)["MEM_CACHE"] = MEM_CACHE;
+
+// ---------------------------------------------------------------------------------------
+
 function isCacheEqual(curCache: Cache<any>, nextCache: Cache<any>) {
-  return (
-    deepEqual(curCache.data, nextCache.data) &&
-    deepEqual(curCache.loading, nextCache.loading) &&
-    deepEqual(curCache.error, nextCache.error)
-  );
+  if (curCache.loading !== nextCache.loading) {
+    return false;
+  }
+
+  if (!deepEqual(curCache.error, nextCache.error)) {
+    return false;
+  }
+
+  return deepEqual(curCache.data, nextCache.data);
 }
 export function initCache<T>(partialCache?: Partial<Cache<T>>): Cache<T> {
   return {
@@ -59,7 +66,11 @@ export function subscribeCache(key: string, sub: CacheListener) {
 export function setCache(key: string, value: Cache<unknown>) {
   MEM_CACHE.set(key, value);
 }
-export function innerMutateCache(
+
+/**
+ * 更新缓存， 并检查缓存是否存在变换， 如果有变化， 则通知所有观察者
+ */
+export function refreshCache(
   key: string,
   cache: Cache<unknown>,
   tryToTriggerUpdate = true
@@ -74,6 +85,7 @@ export function innerMutateCache(
   // 1. creative list, 按更新时间降序排列, 但在多个record更新时间完全相同时, 顺序是不稳定的
   // 前后两次顺序不一致的话, 这里也会认为不相等
   const notChange = current ? isCacheEqual(current, cache) : false;
+
   // 通知所有观察者， 引发组件更新(若有改变)
   if (tryToTriggerUpdate && !notChange) {
     // 通知当前cache的所有观察者
@@ -84,15 +96,28 @@ export function innerMutateCache(
     }
   }
 }
-export function readCache<T>(key: string): Cache<T> {
+export function readCache<T>(
+  key: string,
+  defaultListener?: CacheListener
+): Cache<T> {
   // 如果没有， 就新建一个?
   let cache = MEM_CACHE.get(key);
 
   if (!cache) {
     setCache(key, cloneDeep(EMPTY_CACHE));
     cache = MEM_CACHE.get(key);
+
+    // 内部cache需要一个默认的listener, 用于通知外部的cache的观察者们
+    // 只在第一次创建时订阅
+    if (defaultListener) {
+      subscribeCache(key, defaultListener);
+    }
   }
   return cache as Cache<T>;
+}
+
+export function readCacheListeners(key: string): CacheListener[] {
+  return CACHE_LISTENERS[key];
 }
 
 export function deleteCache(key: string) {

@@ -19,6 +19,8 @@ function App() {
           yield { record: data[i], cacheKey: `users/1/todos/${data[i].id}` };
         }
       },
+      debug: true,
+      // autoRefresh: true,
     }
   );
 

@@ -20,10 +20,11 @@ import { serialize } from "./serialize";
 import { isVisible } from "./webPreset";
 import {
   EMPTY_CACHE,
-  innerMutateCache,
   readCache,
   Cache,
   subscribeCache,
+  refreshCache,
+  readCacheListeners,
 } from "./cache";
 import { assign, cloneDeep, isArray } from "lodash-es";
 
@@ -47,7 +48,6 @@ type UseFetchOption<T> = {
    * 如果你认为从API上无法分析实体对应的结构
    * 传入这个参数将会覆盖默认的行为
    */
-  // fineGrained?: (data: T) => Array<{ tableName: string; records: DBRecord[] }>;
 
   fineGrainedIter?: (
     data: T
@@ -146,23 +146,27 @@ function useFetch<T>(
               record: fineGrainedData,
               cacheKey: fineGrainedCacheKey,
             } of options.fineGrainedIter(data)) {
-              const fineGrainedCache = readCache<unknown>(fineGrainedCacheKey);
-              // 当内部缓存发生变化时， 外部缓存进行脏检查， 当然这时一定是脏的
-              subscribeCache(fineGrainedCacheKey, () => {
-                innerMutateCache(
-                  cacheKey,
-                  cache,
-                  stateDependencies.current.data ||
-                    stateDependencies.current.loading
-                );
-              });
+              // 内部任何一个缓存发生变化， 外部cache的观察者都会被通知
+              // 但这个订阅应该只发生一次
+              const fineGrainedCache = readCache<unknown>(
+                fineGrainedCacheKey,
+                () => {
+                  readCacheListeners(cacheKey).forEach((listener) => {
+                    listener();
+                  });
+                }
+              );
 
-              // 细粒度缓存触发更新
-              innerMutateCache(
+              // 更新内部缓存， 如果内部缓存触发了更新， 外部缓存的观察者也会被通知
+              // 如果在一次revalidate过程中(比如第一次...)， 多个内部缓存都发生了变化， 外部的观察者会被通知多次
+              // 这时就要依赖react的批量更新机制了
+              // 或许这里我应该自己添加一个批量更新机制
+              refreshCache(
                 fineGrainedCacheKey,
                 {
                   ...fineGrainedCache,
                   loading: false,
+                  // cloneDeep是否很耗时? 能否避免?
                   data: cloneDeep(fineGrainedData),
                 },
                 true
@@ -179,7 +183,8 @@ function useFetch<T>(
               });
             }
 
-            innerMutateCache(
+            // 主要是loading
+            refreshCache(
               cacheKey,
               {
                 ...cache,
@@ -191,7 +196,7 @@ function useFetch<T>(
             );
           } else {
             // 异步之后, cache可能已经被删除
-            innerMutateCache(
+            refreshCache(
               cacheKey,
               {
                 ...cache,
@@ -206,7 +211,7 @@ function useFetch<T>(
         .catch(({ error }: any) => {
           log(cacheKey, "revalidate error");
 
-          innerMutateCache(
+          refreshCache(
             cacheKey,
             {
               ...cache,
@@ -369,7 +374,7 @@ function mutateCache<T>(
 
     // 乐观更新， 直接改变本地数据
     if (_options.optimisticData) {
-      innerMutateCache(cacheKey, _options.optimisticData);
+      refreshCache(cacheKey, _options.optimisticData);
     }
 
     if (mutationFun) {
@@ -377,7 +382,7 @@ function mutateCache<T>(
         // 1. 乐观更新时， 不需要返回值， 直接revalidate
         // 2. 有的修改就没有返回值， 也直接revalidate
         if (!_options.optimisticData && nextCache) {
-          innerMutateCache(cacheKey, nextCache);
+          refreshCache(cacheKey, nextCache);
         }
         // 通知所有mount状态的组件重新验证数据
         if (CACHE_REVIDATE_POOL[cacheKey]) {
