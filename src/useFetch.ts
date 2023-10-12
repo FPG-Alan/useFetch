@@ -25,6 +25,7 @@ import {
   subscribeCache,
   refreshCache,
   readCacheListeners,
+  broadcastCacheChange,
 } from "./cache";
 import { assign, cloneDeep, get, isArray, set } from "lodash-es";
 
@@ -101,9 +102,12 @@ function useFetch<T>(
     (callback: () => void) => {
       unsubscribe.current?.();
       if (cacheKey) {
-        unsubscribe.current = subscribeCache(cacheKey, () => {
-          log(`${cacheKey} request an update`);
-          callback();
+        unsubscribe.current = subscribeCache(cacheKey, {
+          subscriber: "Component",
+          excutor: () => {
+            log(`${cacheKey} request an update`);
+            callback();
+          },
         });
       }
       const unsubscribeFn = unsubscribe.current ?? (() => void 0);
@@ -143,16 +147,25 @@ function useFetch<T>(
               cacheKey: fineGrainedCacheKey,
             } of options.fineGrainedIter(data)) {
               const fineGrainedData = get(data, path);
-              // 内部任何一个缓存发生变化， 外部cache的观察者都会被通知
-              // 但这个订阅应该只发生一次
-              const fineGrainedCache = readCache<unknown>(
-                fineGrainedCacheKey,
-                () => {
-                  readCacheListeners(cacheKey).forEach((listener) => {
-                    listener();
-                  });
-                }
-              );
+
+              // 有可能存在
+              const innerCache = readCache<unknown>(fineGrainedCacheKey);
+
+              // 检查当前cacheKey有没有订阅innerCache
+              const existIndex = readCacheListeners(
+                fineGrainedCacheKey
+              ).findIndex((listener) => listener.subscriber === cacheKey);
+
+              // 如果没有订阅
+              if (existIndex === -1) {
+                // 内部任何一个缓存发生变化， 外部cache的观察者都会被通知
+                subscribeCache(fineGrainedCacheKey, {
+                  subscriber: cacheKey,
+                  excutor: () => {
+                    broadcastCacheChange(cacheKey);
+                  },
+                });
+              }
 
               // 更新内部缓存， 如果内部缓存触发了更新， 外部缓存的观察者也会被通知
               // 如果在一次revalidate过程中(比如第一次...)， 多个内部缓存都发生了变化， 外部的观察者会被通知多次
@@ -161,7 +174,7 @@ function useFetch<T>(
               refreshCache(
                 fineGrainedCacheKey,
                 {
-                  ...fineGrainedCache,
+                  ...innerCache,
                   loading: false,
                   data: fineGrainedData,
                 },

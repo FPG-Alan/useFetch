@@ -12,7 +12,8 @@ const API = "https://jsonplaceholder.typicode.com/users/1/todos";
 function App() {
   const [cache] = useFetch<Array<Todo>>(
     API,
-    (api) => fetch(api).then((res) => res.json()),
+    // (api) => fetch(api).then((res) => res.json()),
+    GET,
     {
       fineGrainedIter: function* (data) {
         for (let i = 0, l = data.length; i < l; i += 1) {
