@@ -37,7 +37,7 @@ class LRUMap<K, V> {
   // Most recently-used entry. Invalidated when map is modified.
   newest: Entry<K, V> | undefined;
 
-  destroyWhileDelete = false;
+  destroyWhileDelete = true;
 
   private _keymap;
   // Construct a new cache object which will hold up to limit entries.
@@ -51,8 +51,8 @@ class LRUMap<K, V> {
   constructor(limit: number, entries?: Iterable<[K, V]>);
   constructor(
     limit: number | Iterable<[K, V]>,
-    entries?: Iterable<[K, V]>,
-    destroyWhileDelete?: boolean
+    entries?: Iterable<[K, V]>
+    // destroyWhileDelete?: boolean
   ) {
     if (typeof limit !== "number") {
       // called as (entries)
@@ -65,7 +65,7 @@ class LRUMap<K, V> {
     this.oldest = this.newest = undefined;
     this._keymap = new Map();
 
-    this.destroyWhileDelete = !!destroyWhileDelete;
+    // this.destroyWhileDelete = !!destroyWhileDelete;
 
     if (entries) {
       this.assign(entries);
@@ -184,9 +184,7 @@ class LRUMap<K, V> {
       entry[NEWER] = entry[OLDER] = undefined;
       this._keymap.delete(entry.key);
 
-      if (this.destroyWhileDelete) {
-        (entry.value as any)["destroy"]?.();
-      }
+      (entry.value as any)["destroy"]?.(entry.key);
       --this.size;
       return [entry.key, entry.value];
     }

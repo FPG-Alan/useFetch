@@ -11,11 +11,16 @@ export type Cache<T> = {
   loading: boolean;
   error: any;
   revalidatePromise?: Promise<T>;
+
+  destory: Function;
+  __deps?: string[];
+  __parents?: string[];
 };
 export const EMPTY_CACHE: Cache<unknown> = {
   data: null,
   loading: true,
   error: null,
+  destory: deleteCache,
 };
 type CacheListener = {
   // 订阅者, 可能是另外一个cache, 或者组件
@@ -104,22 +109,13 @@ export function broadcastCacheChange(key: string) {
     });
   }
 }
-export function readCache<T>(
-  key: string
-  // defaultListener?: CacheListener
-): Cache<T> {
+export function readCache<T>(key: string): Cache<T> {
   // 如果没有， 就新建一个?
   let cache = MEM_CACHE.get(key);
 
   if (!cache) {
     setCache(key, cloneDeep(EMPTY_CACHE));
     cache = MEM_CACHE.get(key);
-
-    // // 内部cache需要一个默认的listener, 用于通知外部的cache的观察者们
-    // // 只在第一次创建时订阅
-    // if (defaultListener) {
-    //   subscribeCache(key, defaultListener);
-    // }
   }
   return cache as Cache<T>;
 }
@@ -129,5 +125,7 @@ export function readCacheListeners(key: string): CacheListener[] {
 }
 
 export function deleteCache(key: string) {
+  // 消除
+
   MEM_CACHE.delete(key);
 }
