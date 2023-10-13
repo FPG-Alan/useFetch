@@ -124,6 +124,14 @@ class LRUMap<K, V> {
     this.size = this._keymap.size;
   }
 
+  incognitoGet(key: K): V | void {
+    // First, find our cache entry
+    const entry = this._keymap.get(key);
+    if (!entry) return; // Not cached. Sorry.
+
+    return entry.value;
+  }
+
   get(key: K): V | void {
     // First, find our cache entry
     const entry = this._keymap.get(key);
@@ -182,9 +190,11 @@ class LRUMap<K, V> {
       // Remove last strong reference to <entry> and remove links from the purged
       // entry being returned:
       entry[NEWER] = entry[OLDER] = undefined;
+
+      (entry.value as any)["destroy"]?.(entry.key, entry.value);
+
       this._keymap.delete(entry.key);
 
-      (entry.value as any)["destroy"]?.(entry.key);
       --this.size;
       return [entry.key, entry.value];
     }

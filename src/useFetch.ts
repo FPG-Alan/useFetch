@@ -24,8 +24,6 @@ import {
   Cache,
   subscribeCache,
   refreshCache,
-  readCacheListeners,
-  broadcastCacheChange,
 } from "./cache";
 import { assign, cloneDeep, get, isArray, set } from "lodash-es";
 
@@ -140,46 +138,31 @@ function useFetch<T>(
       return revalidatePromise
         .then((data) => {
           if (options?.fineGrainedIter) {
-            // 这个cache的内容将是其他cache
-            // 每个data内部都清空了， 填入所依赖的cacheKey
             for (const {
               path,
               cacheKey: fineGrainedCacheKey,
             } of options.fineGrainedIter(data)) {
               const fineGrainedData = get(data, path);
 
-              // 有可能存在
+              // get, or create fine grained cache
               const innerCache = readCache<unknown>(fineGrainedCacheKey);
-
-              // 检查当前cacheKey有没有订阅innerCache
-              const existIndex = readCacheListeners(
-                fineGrainedCacheKey
-              ).findIndex((listener) => listener.subscriber === cacheKey);
-
-              // 如果没有订阅
-              if (existIndex === -1) {
-                // 内部任何一个缓存发生变化， 外部cache的观察者都会被通知
-                subscribeCache(fineGrainedCacheKey, {
-                  subscriber: cacheKey,
-                  excutor: () => {
-                    broadcastCacheChange(cacheKey);
-                  },
-                });
+              // connect finegrained cache and current cache
+              if (!cache.__deps) {
+                cache.__deps = new Set();
               }
+              cache.__deps?.add(fineGrainedCacheKey);
 
-              // 更新内部缓存， 如果内部缓存触发了更新， 外部缓存的观察者也会被通知
-              // 如果在一次revalidate过程中(比如第一次...)， 多个内部缓存都发生了变化， 外部的观察者会被通知多次
-              // 这时就要依赖react的批量更新机制了
-              // 或许这里我应该自己添加一个批量更新机制
-              refreshCache(
-                fineGrainedCacheKey,
-                {
-                  ...innerCache,
-                  loading: false,
-                  data: fineGrainedData,
-                },
-                true
-              );
+              if (!innerCache.__parents) {
+                innerCache.__parents = new Set();
+              }
+              innerCache.__parents.add(cacheKey);
+
+              // refresh fine grained cache
+              refreshCache(fineGrainedCacheKey, {
+                ...innerCache,
+                loading: false,
+                data: fineGrainedData,
+              });
 
               set(data as any as object, path, {
                 __cache_key__: fineGrainedCacheKey,
@@ -302,7 +285,6 @@ function useFetch<T>(
     }
 
     if (_options.autoRefresh) {
-      console.log(key, "autoRefresh");
       next();
     }
 
@@ -375,6 +357,21 @@ function mutateCache<T>(
   options?: MutateOption<T>
 ) {
   if (cacheKey) {
+    const cache = readCache(cacheKey);
+    // if this cache dependent on other cache
+    // we dit not support mutationFun/options
+    if (cache.__deps && cache.__deps.size > 0) {
+      // 通知所有mount状态的组件重新验证数据
+      // broadcastCacheChange(cacheKey);
+      if (CACHE_REVIDATE_POOL[cacheKey]) {
+        Object.keys(CACHE_REVIDATE_POOL[cacheKey]).forEach((key) => {
+          CACHE_REVIDATE_POOL[cacheKey][key]();
+        });
+      }
+
+      return;
+    }
+
     const _options = { ...DEFAULT_MUTATE_OPTIONS, ...(options || {}) };
 
     // 乐观更新， 直接改变本地数据
@@ -398,6 +395,7 @@ function mutateCache<T>(
       });
     } else if (_options.revalidate) {
       // 通知所有mount状态的组件重新验证数据
+      // broadcastCacheChange(cacheKey);
       if (CACHE_REVIDATE_POOL[cacheKey]) {
         Object.keys(CACHE_REVIDATE_POOL[cacheKey]).forEach((key) => {
           CACHE_REVIDATE_POOL[cacheKey][key]();

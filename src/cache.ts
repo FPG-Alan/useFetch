@@ -1,6 +1,7 @@
 import { deepEqual } from "fast-equals";
-import { cloneDeep } from "lodash-es";
+import { cloneDeep, pull } from "lodash-es";
 import LRUMap from "./lru";
+import { mutateCache } from "./useFetch";
 
 /**
  * - data, loading, error 通过对比前后两次是否相等参与过期决策
@@ -13,14 +14,14 @@ export type Cache<T> = {
   revalidatePromise?: Promise<T>;
 
   destory: Function;
-  __deps?: string[];
-  __parents?: string[];
+  __deps?: Set<string>;
+  __parents?: Set<string>;
 };
 export const EMPTY_CACHE: Cache<unknown> = {
   data: null,
   loading: true,
   error: null,
-  destory: deleteCache,
+  destory: beforeDeleteCache,
 };
 type CacheListener = {
   // 订阅者, 可能是另外一个cache, 或者组件
@@ -32,6 +33,7 @@ const MEM_CACHE: LRUMap<string, Cache<any>> = new LRUMap(500);
 const CACHE_LISTENERS: Record<string, Array<CacheListener>> = {};
 
 (window as any)["MEM_CACHE"] = MEM_CACHE;
+(window as any)["CACHE_LISTENERS"] = CACHE_LISTENERS;
 
 // ---------------------------------------------------------------------------------------
 
@@ -51,6 +53,7 @@ export function initCache<T>(partialCache?: Partial<Cache<T>>): Cache<T> {
     data: null,
     loading: false,
     error: null,
+    destory: beforeDeleteCache,
     ...(partialCache || {}),
   };
 }
@@ -98,6 +101,14 @@ export function refreshCache(
   // 通知所有观察者， 引发组件更新(若有改变)
   if (tryToTriggerUpdate && !notChange) {
     broadcastCacheChange(key);
+
+    // some cache relay on current one
+    // We should assume that these caches have also changed
+    if (cache.__parents && cache.__parents.size > 0) {
+      for (const pKey of cache.__parents) {
+        broadcastCacheChange(pKey);
+      }
+    }
   }
 }
 
@@ -124,8 +135,36 @@ export function readCacheListeners(key: string): CacheListener[] {
   return CACHE_LISTENERS[key] ?? [];
 }
 
+function beforeDeleteCache(cacheKey: string, cache: Cache<unknown>) {
+  if (cache.__deps) {
+    for (const depKey of cache.__deps) {
+      // use incognito mode avoid break lru mechanism
+      const depCache = MEM_CACHE.incognitoGet(depKey);
+
+      if (depCache && depCache.__parents) {
+        // delete current cache key from it's dep cache's parents
+
+        depCache.__parents.delete(cacheKey);
+      }
+    }
+  }
+
+  if (cache.__parents) {
+    for (const pKey of cache.__parents) {
+      // use incognito mode avoid break lru mechanism
+      const parentCache = MEM_CACHE.incognitoGet(pKey);
+
+      if (parentCache) {
+        // dep delete, we treat it as change of the parent cache
+        // just refresh it
+        mutateCache(pKey);
+      }
+    }
+  }
+}
 export function deleteCache(key: string) {
-  // 消除
+  const cacheWillBeDelete = readCache(key);
+  beforeDeleteCache(key, cacheWillBeDelete);
 
   MEM_CACHE.delete(key);
 }
