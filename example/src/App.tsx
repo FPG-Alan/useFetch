@@ -36,8 +36,11 @@ function App() {
   const [cache] = useFetch<Array<Todo>>(
     API,
     (api) => {
+      console.log("reload");
       return new Promise((resolve) => {
-        resolve(cloneDeep(FAKE));
+        const aa = cloneDeep(FAKE);
+        console.log(cloneDeep(aa));
+        resolve(aa);
       });
     },
     {
@@ -46,6 +49,8 @@ function App() {
           yield { path: i.toString(), cacheKey: `users/1/todos/${data[i].id}` };
         }
       },
+
+      debug: true,
     }
   );
 
@@ -68,6 +73,22 @@ function App() {
         <p key={item.id}>
           <span>{item.id}:</span>
           <span>{item.title}</span>
+          <span>{(item.completed && "√") || "×"}</span>
+          {!item.completed && (
+            <button
+              onClick={() => {
+                // mutateCache(API);
+                const index = FAKE.findIndex((todo) => todo.id === item.id);
+                if (index !== -1) {
+                  FAKE[index].completed = true;
+                }
+
+                mutateCache(`users/1/todos/${item.id}`);
+              }}
+            >
+              done
+            </button>
+          )}
           <button
             onClick={() => {
               // mutateCache(API);

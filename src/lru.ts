@@ -191,7 +191,7 @@ class LRUMap<K, V> {
       // entry being returned:
       entry[NEWER] = entry[OLDER] = undefined;
 
-      (entry.value as any)["destroy"]?.(entry.key, entry.value);
+      (entry.value as any)["__destory"]?.(entry.key, entry.value);
 
       this._keymap.delete(entry.key);
 

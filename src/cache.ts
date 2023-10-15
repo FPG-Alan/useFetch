@@ -11,9 +11,8 @@ export type Cache<T> = {
   data: T | null;
   loading: boolean;
   error: any;
-  revalidatePromise?: Promise<T>;
 
-  destory: Function;
+  __destory: Function;
   __deps?: Set<string>;
   __parents?: Set<string>;
 };
@@ -53,7 +52,7 @@ export function initCache<T>(partialCache?: Partial<Cache<T>>): Cache<T> {
     data: null,
     loading: false,
     error: null,
-    destory: beforeDeleteCache,
+    __destory: beforeDeleteCache,
     ...(partialCache || {}),
   };
 }
@@ -100,6 +99,7 @@ export function refreshCache(
 
   // 通知所有观察者， 引发组件更新(若有改变)
   if (tryToTriggerUpdate && !notChange) {
+    console.log("cache changed", key);
     broadcastCacheChange(key);
 
     // some cache relay on current one
@@ -113,6 +113,7 @@ export function refreshCache(
 }
 
 export function broadcastCacheChange(key: string) {
+  console.log("broadcastCacheChange", key);
   // 通知当前cache的所有观察者
   if (CACHE_LISTENERS[key]) {
     CACHE_LISTENERS[key].forEach((listener) => {

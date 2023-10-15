@@ -27,12 +27,13 @@ import {
 } from "./cache";
 import { assign, cloneDeep, get, isArray, set } from "lodash-es";
 
-// 用于收集对某个key的缓存
-const CACHE_REVIDATE_POOL: Record<
+const CACHE_REVALIDATE_FUNCTION_POOL: Record<
   string,
   Record<string, () => void | Promise<void>>
 > = {};
-// (window as any)["debug_cache_revalidate_pool"] = CACHE_REVIDATE_POOL;
+
+const CACHE_REVALIDATE_PROMISE_POOL: Record<string, Promise<unknown>> = {};
+// (window as any)["debug_CACHE_REVALIDATE_FUNCTION_POOL"] = CACHE_REVALIDATE_FUNCTION_POOL;
 
 export interface StateDependencies {
   data?: boolean;
@@ -123,16 +124,41 @@ function useFetch<T>(
     if (!cacheKey) {
       return EMPTY_CACHE as Cache<T>;
     }
-    return readCache<T>(cacheKey);
+
+    const snapshot = readCache<T>(cacheKey);
+    if (snapshot.data) {
+      // when snapshot has data, we need check if cache has deps
+      // cache has deps which need be fulfilled
+      if (
+        snapshot.__deps &&
+        snapshot.__deps.size > 0 &&
+        options?.fineGrainedIter
+      ) {
+        const _data = cloneDeep(snapshot.data);
+        for (const { path, cacheKey } of options.fineGrainedIter(_data)) {
+          const record = get(_data, path);
+          const innerData = readCache(record["__cache_key__"]).data || {};
+
+          assign(record, innerData);
+        }
+        snapshot.data = _data;
+      }
+    }
+    return snapshot;
   });
 
   const revalidate = useCallback(() => {
     // 1. key 为空代表暂时不需要请求
     if (cacheKey) {
       log("revalidate", cacheKey);
-      let revalidatePromise = cache?.revalidatePromise;
+      // dedup
+      let revalidatePromise = CACHE_REVALIDATE_PROMISE_POOL[
+        cacheKey
+      ] as Promise<T>;
       if (!revalidatePromise) {
-        revalidatePromise = fetcher(...((isArray(fnArg) && fnArg) || [fnArg]));
+        CACHE_REVALIDATE_PROMISE_POOL[cacheKey] = revalidatePromise = fetcher(
+          ...((isArray(fnArg) && fnArg) || [fnArg])
+        );
       }
 
       return revalidatePromise
@@ -157,6 +183,7 @@ function useFetch<T>(
               }
               innerCache.__parents.add(cacheKey);
 
+              console.log("refresh fine grained cache", fineGrainedData);
               // refresh fine grained cache
               refreshCache(fineGrainedCacheKey, {
                 ...innerCache,
@@ -210,7 +237,8 @@ function useFetch<T>(
         .finally(() => {
           log(cacheKey, "revalidate done");
           // console.log(cache);
-          cache.revalidatePromise = undefined;
+          // cache.revalidatePromise = undefined;
+          delete CACHE_REVALIDATE_PROMISE_POOL[cacheKey];
         });
     }
   }, [cacheKey, cache, key, log]);
@@ -301,28 +329,7 @@ function useFetch<T>(
       // 依赖收集
       get data() {
         stateDependencies.current.data = true;
-
-        // 检查是否存在__cache_key__, 如果存在则填充
-
-        if (cache?.data) {
-          if (options?.fineGrainedIter) {
-            const _data = cloneDeep(cache.data);
-            for (const { path, cacheKey } of options.fineGrainedIter(_data)) {
-              const record = get(_data, path);
-              const innerData = readCache(record["__cache_key__"]).data || {};
-
-              assign(record, innerData);
-            }
-
-            return _data;
-          }
-
-          return cache.data;
-        }
-
-        return null;
-
-        // return cache?.data ?? null;
+        return cache?.data ?? null;
       },
       get error() {
         stateDependencies.current.error = true;
@@ -363,9 +370,9 @@ function mutateCache<T>(
     if (cache.__deps && cache.__deps.size > 0) {
       // 通知所有mount状态的组件重新验证数据
       // broadcastCacheChange(cacheKey);
-      if (CACHE_REVIDATE_POOL[cacheKey]) {
-        Object.keys(CACHE_REVIDATE_POOL[cacheKey]).forEach((key) => {
-          CACHE_REVIDATE_POOL[cacheKey][key]();
+      if (CACHE_REVALIDATE_FUNCTION_POOL[cacheKey]) {
+        Object.keys(CACHE_REVALIDATE_FUNCTION_POOL[cacheKey]).forEach((key) => {
+          CACHE_REVALIDATE_FUNCTION_POOL[cacheKey][key]();
         });
       }
 
@@ -386,20 +393,46 @@ function mutateCache<T>(
         if (!_options.optimisticData && nextCache) {
           refreshCache(cacheKey, nextCache);
         }
+
         // 通知所有mount状态的组件重新验证数据
-        if (CACHE_REVIDATE_POOL[cacheKey]) {
-          Object.keys(CACHE_REVIDATE_POOL[cacheKey]).forEach((key) => {
-            CACHE_REVIDATE_POOL[cacheKey][key]();
-          });
+        if (CACHE_REVALIDATE_FUNCTION_POOL[cacheKey]) {
+          Object.keys(CACHE_REVALIDATE_FUNCTION_POOL[cacheKey]).forEach(
+            (key) => {
+              CACHE_REVALIDATE_FUNCTION_POOL[cacheKey][key]();
+            }
+          );
+        }
+
+        // if cache has parent caches, they should also revalidate
+        if (cache.__parents && cache.__parents.size > 0) {
+          for (const pKey of cache.__parents) {
+            if (CACHE_REVALIDATE_FUNCTION_POOL[pKey]) {
+              Object.keys(CACHE_REVALIDATE_FUNCTION_POOL[pKey]).forEach(
+                (key) => {
+                  CACHE_REVALIDATE_FUNCTION_POOL[pKey][key]();
+                }
+              );
+            }
+          }
         }
       });
     } else if (_options.revalidate) {
       // 通知所有mount状态的组件重新验证数据
-      // broadcastCacheChange(cacheKey);
-      if (CACHE_REVIDATE_POOL[cacheKey]) {
-        Object.keys(CACHE_REVIDATE_POOL[cacheKey]).forEach((key) => {
-          CACHE_REVIDATE_POOL[cacheKey][key]();
+      if (CACHE_REVALIDATE_FUNCTION_POOL[cacheKey]) {
+        Object.keys(CACHE_REVALIDATE_FUNCTION_POOL[cacheKey]).forEach((key) => {
+          CACHE_REVALIDATE_FUNCTION_POOL[cacheKey][key]();
         });
+      }
+
+      // if cache has parent caches, they should also revalidate
+      if (cache.__parents && cache.__parents.size > 0) {
+        for (const pKey of cache.__parents) {
+          if (CACHE_REVALIDATE_FUNCTION_POOL[pKey]) {
+            Object.keys(CACHE_REVALIDATE_FUNCTION_POOL[pKey]).forEach((key) => {
+              CACHE_REVALIDATE_FUNCTION_POOL[pKey][key]();
+            });
+          }
+        }
       }
     }
   }
