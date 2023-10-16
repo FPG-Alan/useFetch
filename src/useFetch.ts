@@ -249,16 +249,16 @@ function useFetch<T>(
   useLayoutEffect(() => {
     if (cacheKey) {
       const revalidate_key = window.crypto.randomUUID();
-      if (!CACHE_REVIDATE_POOL[cacheKey]) {
-        CACHE_REVIDATE_POOL[cacheKey] = {};
+      if (!CACHE_REVALIDATE_FUNCTION_POOL[cacheKey]) {
+        CACHE_REVALIDATE_FUNCTION_POOL[cacheKey] = {};
       }
-      CACHE_REVIDATE_POOL[cacheKey][revalidate_key] = revalidate;
+      CACHE_REVALIDATE_FUNCTION_POOL[cacheKey][revalidate_key] = revalidate;
 
       requestAnimationFrame(revalidate);
 
       return () => {
-        if (CACHE_REVIDATE_POOL[cacheKey][revalidate_key]) {
-          delete CACHE_REVIDATE_POOL[cacheKey][revalidate_key];
+        if (CACHE_REVALIDATE_FUNCTION_POOL[cacheKey][revalidate_key]) {
+          delete CACHE_REVALIDATE_FUNCTION_POOL[cacheKey][revalidate_key];
         }
       };
     }

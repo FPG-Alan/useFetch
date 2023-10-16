@@ -20,7 +20,7 @@ export const EMPTY_CACHE: Cache<unknown> = {
   data: null,
   loading: true,
   error: null,
-  destory: beforeDeleteCache,
+  __destory: beforeDeleteCache,
 };
 type CacheListener = {
   // 订阅者, 可能是另外一个cache, 或者组件

@@ -216,7 +216,6 @@ class LRUMap<K, V> {
   delete(key: K) {
     const entry = this._keymap.get(key);
     if (!entry) return;
-    console.log("--------------delete");
     this._keymap.delete(entry.key);
     if (entry[NEWER] && entry[OLDER]) {
       // relink the older entry with the newer entry
