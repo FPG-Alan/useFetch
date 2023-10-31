@@ -1,5 +1,5 @@
 import useFetch, { mutateCache } from "lib";
-import { cloneDeep } from "lodash-es";
+import { clone, cloneDeep, set, unset } from "lodash-es";
 import { deleteCache } from "../../dist/lib";
 
 type Todo = {
@@ -9,7 +9,7 @@ type Todo = {
   completed: boolean;
 };
 
-const API = "https://jsonplaceholder.typicode.com/users/1/todos";
+const API = "/api/users/1/todos";
 
 const TITLES = ["111", "222", "333", "444", "aaa", "bbb"];
 const FAKE: Todo[] = [
@@ -32,25 +32,44 @@ const FAKE: Todo[] = [
     completed: false,
   },
 ];
+
+const test = {
+  limit: -1,
+  total: 3,
+  records: cloneDeep(FAKE),
+  offset: 0,
+};
+
+// unset(test, "records.0");
+// set(test, "records.0", { a: "a" });
+// console.log(test);
 function App() {
-  const [cache] = useFetch<Array<Todo>>(
+  const [cache] = useFetch<any>(
     API,
     (api) => {
-      console.log("reload");
+      // console.log("reload");
       return new Promise((resolve) => {
         const aa = cloneDeep(FAKE);
-        console.log(cloneDeep(aa));
-        resolve(aa);
+        // console.log(cloneDeep(aa));
+        resolve({
+          limit: -1,
+          total: 3,
+          records: aa,
+          offset: 0,
+        });
       });
     },
     {
-      fineGrainedIter: function* (data) {
-        for (let i = 0, l = data.length; i < l; i += 1) {
-          yield { path: i.toString(), cacheKey: `users/1/todos/${data[i].id}` };
+      relation: function* (data) {
+        for (let i = 0, l = data.records.length; i < l; i += 1) {
+          yield {
+            path: `records.${i}`,
+            cacheKey: `/api/users/1/todos/${data.records[i].id}`,
+          };
         }
       },
 
-      debug: true,
+      // debug: true,
     }
   );
 
@@ -69,7 +88,7 @@ function App() {
       >
         refresh
       </button>
-      {cache.data?.map((item) => (
+      {cache.data?.records.map((item) => (
         <p key={item.id}>
           <span>{item.id}:</span>
           <span>{item.title}</span>
@@ -83,7 +102,7 @@ function App() {
                   FAKE[index].completed = true;
                 }
 
-                mutateCache(`users/1/todos/${item.id}`);
+                mutateCache(`/api/users/1/todos/${item.id}`);
               }}
             >
               done
@@ -97,7 +116,7 @@ function App() {
                 FAKE.splice(index, 1);
               }
 
-              deleteCache(`users/1/todos/${item.id}`);
+              deleteCache(`/api/users/1/todos/${item.id}`);
               // mutateCache(API);
             }}
           >

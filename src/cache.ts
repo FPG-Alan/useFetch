@@ -2,17 +2,23 @@ import { deepEqual } from "fast-equals";
 import { cloneDeep, pull } from "lodash-es";
 import LRUMap from "./lru";
 import { mutateCache } from "./useFetch";
+import randomUUID from "./uuid";
 
-/**
- * - data, loading, error 通过对比前后两次是否相等参与过期决策
- * - 其他属性为运行时需要, 不影响cache过期判断
- */
 export type Cache<T> = {
   data: T | null;
   loading: boolean;
   error: any;
 
+  /**
+   * clean up stuff
+   * such as deps/parents
+   */
   __destory: Function;
+
+  /**
+   * dep cache keys,
+   * link to caches which has __parents inlude this cache key
+   */
   __deps?: Set<string>;
   __parents?: Set<string>;
 };
@@ -20,7 +26,7 @@ export const EMPTY_CACHE: Cache<unknown> = {
   data: null,
   loading: true,
   error: null,
-  destory: beforeDeleteCache,
+  __destory: beforeDeleteCache,
 };
 type CacheListener = {
   // 订阅者, 可能是另外一个cache, 或者组件
@@ -99,21 +105,30 @@ export function refreshCache(
 
   // 通知所有观察者， 引发组件更新(若有改变)
   if (tryToTriggerUpdate && !notChange) {
-    console.log("cache changed", key);
     broadcastCacheChange(key);
 
     // some cache relay on current one
     // We should assume that these caches have also changed
     if (cache.__parents && cache.__parents.size > 0) {
       for (const pKey of cache.__parents) {
-        broadcastCacheChange(pKey);
+        // change p cache's memory address
+        // react will get new cache through getSnapshot
+        const pCache = MEM_CACHE.incognitoGet(pKey);
+        if (pCache) {
+          MEM_CACHE.set(pKey, { ...pCache });
+
+          // console.log(
+          //   `${key} changed, and ${pKey} as it's parent also need change`
+          // );
+          // broadcast change
+          broadcastCacheChange(pKey);
+        }
       }
     }
   }
 }
 
 export function broadcastCacheChange(key: string) {
-  console.log("broadcastCacheChange", key);
   // 通知当前cache的所有观察者
   if (CACHE_LISTENERS[key]) {
     CACHE_LISTENERS[key].forEach((listener) => {
