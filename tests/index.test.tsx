@@ -122,13 +122,13 @@ function App() {
       });
     },
     {
-      fineGrainedIter: function* (data) {
+      relation: function* (data) {
         for (let i = 0, l = data.length; i < l; i += 1) {
           yield { path: i.toString(), cacheKey: `users/1/todos/${data[i].id}` };
         }
       },
 
-      debug: true,
+      // debug: true,
     }
   );
 

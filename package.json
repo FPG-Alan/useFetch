@@ -1,10 +1,13 @@
 {
-  "name": "use-fetch",
-  "version": "1.0.0",
-  "description": "",
+  "name": "use-get-data",
+  "version": "1.1.0",
+  "description": "Based on useSWR, the cache granularity has been optimized",
   "main": "dist/lib.js",
   "module": "dist/lib.mjs",
   "typings": "dist/lib.d.ts",
+  "files": [
+    "dist/"
+  ],
   "scripts": {
     "prepare": "husky install",
     "clean": "rimraf dist",
@@ -23,9 +26,16 @@
     }
   },
   "keywords": [],
-  "author": "Alan Yang",
+  "author": "Alan Yang <theyy.me@gmail.com> (https://github.com/FPG-Alan)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FPG-Alan/useFetch.git"
+  },
   "license": "MIT",
   "devDependencies": {
+    "@types/lodash-es": "^4.17.9",
+    "@types/react": "^18.2.25",
+    "@types/react-dom": "^18.2.13",
     "@commitlint/cli": "^17.0.3",
     "@commitlint/config-conventional": "^17.0.3",
     "@types/jest": "^28.1.4",
@@ -48,11 +58,7 @@
     "ts-jest": "^28.0.5",
     "typescript": "^4.7.4"
   },
-  "dependencies": {
-    "@types/lodash-es": "^4.17.9",
-    "@types/react": "^18.2.25",
-    "@types/react-dom": "^18.2.13",
-    "dist": "link:C:/Users/FPG/Documents/projects/useFetch/dist",
+  "peerDependencies": {
     "fast-equals": "^5.0.1",
     "lodash-es": "^4.17.21",
     "react": "^18.2.0",

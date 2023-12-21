@@ -1,13 +1,3 @@
-/**
- * 1. stale while revalidate
- * 2. dedupe
- * 3. auto-cancel
- * 4. suspense
- * 5.
- */
-
-// @ts-ignore
-// import { useSyncExternalStore } from 'use-sync-external-store/shim';
 import {
   useCallback,
   useEffect,
@@ -15,6 +5,7 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
+import { assign, cloneDeep, get, isArray, set } from "lodash-es";
 
 import { serialize } from "./serialize";
 import { isVisible } from "./webPreset";
@@ -25,7 +16,7 @@ import {
   subscribeCache,
   refreshCache,
 } from "./cache";
-import { assign, cloneDeep, get, isArray, set } from "lodash-es";
+import randomUUID from "./uuid";
 
 const CACHE_REVALIDATE_FUNCTION_POOL: Record<
   string,
@@ -33,7 +24,6 @@ const CACHE_REVALIDATE_FUNCTION_POOL: Record<
 > = {};
 
 const CACHE_REVALIDATE_PROMISE_POOL: Record<string, Promise<unknown>> = {};
-// (window as any)["debug_CACHE_REVALIDATE_FUNCTION_POOL"] = CACHE_REVALIDATE_FUNCTION_POOL;
 
 export interface StateDependencies {
   data?: boolean;
@@ -44,12 +34,8 @@ export interface StateDependencies {
 type UseFetchOption<T> = {
   autoRefresh?: boolean;
   debug?: boolean;
-  /**
-   * 如果你认为从API上无法分析实体对应的结构
-   * 传入这个参数将会覆盖默认的行为
-   */
-
-  fineGrainedIter?: (
+  delay?: number;
+  relation?: (
     data: T
   ) => Generator<{ cacheKey: string; path: string }, void, undefined>;
 };
@@ -58,26 +44,11 @@ const DEFAULT_OPTIONS = {
   debug: false,
 };
 
-/**
- * 1. cache
- * 2. revalidate
- * 3. dedupe
- * 4. heartbeat
- * 5. 更细粒度的缓存
- *
- *
- *
- * @desc 09/01/2022
- * 重新验证的时机:
- * 1. mount时重新验证
- * 2. key变化时重新验证
- * 3. 上述两者都没有变化， 但cache被删除时重新验证
- */
 function useFetch<T>(
   key: string | Array<any> | Function,
-  fetcher: (...args: any) => Promise<T>,
+  fetcher: (...args: unknown[]) => Promise<T>,
   options?: UseFetchOption<T>
-) {
+): [Omit<Cache<T>, "__destory">] {
   const _options = { ...DEFAULT_OPTIONS, ...(options || {}) };
 
   // eslint-disable-next-line prefer-const
@@ -89,7 +60,7 @@ function useFetch<T>(
   const firstOfThisMount = useRef(true);
 
   const log = useCallback(
-    (...arg: any) => {
+    (...arg: unknown[]) => {
       if (_options.debug) {
         console.log(...arg);
       }
@@ -97,7 +68,7 @@ function useFetch<T>(
     [_options.debug]
   );
 
-  const subsrcibe = useCallback(
+  const subsrciber = useCallback(
     (callback: () => void) => {
       unsubscribe.current?.();
       if (cacheKey) {
@@ -116,41 +87,21 @@ function useFetch<T>(
     [cacheKey, log]
   );
 
-  /**
-   * cache 变化触发react更新
-   */
-  const cache = useSyncExternalStore(subsrcibe, () => {
-    // key 为空代表暂时不需要写缓存
+  // react subscribe to cache
+  const cache = useSyncExternalStore(subsrciber, () => {
+    // empty key indicate no need to request
     if (!cacheKey) {
       return EMPTY_CACHE as Cache<T>;
     }
 
     const snapshot = readCache<T>(cacheKey);
-    if (snapshot.data) {
-      // when snapshot has data, we need check if cache has deps
-      // cache has deps which need be fulfilled
-      if (
-        snapshot.__deps &&
-        snapshot.__deps.size > 0 &&
-        options?.fineGrainedIter
-      ) {
-        const _data = cloneDeep(snapshot.data);
-        for (const { path, cacheKey } of options.fineGrainedIter(_data)) {
-          const record = get(_data, path);
-          const innerData = readCache(record["__cache_key__"]).data || {};
-
-          assign(record, innerData);
-        }
-        snapshot.data = _data;
-      }
-    }
     return snapshot;
   });
 
   const revalidate = useCallback(() => {
-    // 1. key 为空代表暂时不需要请求
     if (cacheKey) {
       log("revalidate", cacheKey);
+
       // dedup
       let revalidatePromise = CACHE_REVALIDATE_PROMISE_POOL[
         cacheKey
@@ -161,13 +112,23 @@ function useFetch<T>(
         );
       }
 
-      return revalidatePromise
+      // delay
+      let promise = revalidatePromise;
+      if (options?.delay) {
+        promise = new Promise((resolve, reject) => {
+          setTimeout(() => {
+            revalidatePromise?.then(resolve).catch(reject);
+          }, options.delay);
+        });
+      }
+
+      return promise
         .then((data) => {
-          if (options?.fineGrainedIter) {
+          if (_options.relation) {
             for (const {
               path,
               cacheKey: fineGrainedCacheKey,
-            } of options.fineGrainedIter(data)) {
+            } of _options.relation(data)) {
               const fineGrainedData = get(data, path);
 
               // get, or create fine grained cache
@@ -183,20 +144,19 @@ function useFetch<T>(
               }
               innerCache.__parents.add(cacheKey);
 
-              console.log("refresh fine grained cache", fineGrainedData);
+              // console.log("refresh fine grained cache", fineGrainedData);
               // refresh fine grained cache
               refreshCache(fineGrainedCacheKey, {
                 ...innerCache,
                 loading: false,
                 data: fineGrainedData,
               });
-
               set(data as any as object, path, {
                 __cache_key__: fineGrainedCacheKey,
               });
             }
 
-            // 主要是loading
+            // only care about loading, data is just pointer(under fine grained mode)
             refreshCache(
               cacheKey,
               {
@@ -208,7 +168,6 @@ function useFetch<T>(
                 stateDependencies.current.loading
             );
           } else {
-            // 异步之后, cache可能已经被删除
             refreshCache(
               cacheKey,
               {
@@ -221,7 +180,7 @@ function useFetch<T>(
             );
           }
         })
-        .catch(({ error }: any) => {
+        .catch((reason: unknown) => {
           log(cacheKey, "revalidate error");
 
           refreshCache(
@@ -229,26 +188,24 @@ function useFetch<T>(
             {
               ...cache,
               loading: false,
-              error,
+              error: reason,
             },
             stateDependencies.current.data || stateDependencies.current.loading
           );
         })
         .finally(() => {
           log(cacheKey, "revalidate done");
-          // console.log(cache);
-          // cache.revalidatePromise = undefined;
           delete CACHE_REVALIDATE_PROMISE_POOL[cacheKey];
         });
     }
   }, [cacheKey, cache, key, log]);
 
-  // 1. 注册revalidate函数到全局事件池
-  // 2. mount阶段重新验证
-  // 3. cacheKey变化时重新验证
+  // 1. regist revalidate to global pool
+  // 2. issue first revalidate
+  // 3. revalidate after cache key changed
   useLayoutEffect(() => {
     if (cacheKey) {
-      const revalidate_key = window.crypto.randomUUID();
+      const revalidate_key = randomUUID();
       if (!CACHE_REVALIDATE_FUNCTION_POOL[cacheKey]) {
         CACHE_REVALIDATE_FUNCTION_POOL[cacheKey] = {};
       }
@@ -264,9 +221,7 @@ function useFetch<T>(
     }
   }, [cacheKey]);
 
-  // cache被删除时重新验证
   useLayoutEffect(() => {
-    // 无cache并且也不是mount阶段
     if (!cache && !firstOfThisMount.current) {
       requestAnimationFrame(revalidate);
     }
@@ -285,7 +240,7 @@ function useFetch<T>(
     };
   }, []);
 
-  // 心跳包
+  // heartbeat
   useLayoutEffect(() => {
     let timer: any;
     function next() {
@@ -326,9 +281,27 @@ function useFetch<T>(
 
   return [
     {
-      // 依赖收集
       get data() {
         stateDependencies.current.data = true;
+        if (
+          cache.data &&
+          cache.__deps &&
+          cache.__deps.size > 0 &&
+          _options.relation
+        ) {
+          // when snapshot has data, we need check if cache has deps
+          // which need be fulfilled
+          const _data = cloneDeep(cache.data);
+          for (const { path, cacheKey } of _options.relation(_data)) {
+            const record = get(_data, path);
+            const innerData = readCache(record["__cache_key__"]).data || {};
+
+            assign(record, innerData);
+          }
+
+          return _data;
+        }
+
         return cache?.data ?? null;
       },
       get error() {
@@ -343,14 +316,6 @@ function useFetch<T>(
   ];
 }
 
-/**
- *
- * @param cacheKey
- * @param partialCache
- * @param tryToTriggerUpdate 是否触发组件更新, 一般用于批量修改缓存的情况, 设置为false, 在修改完成后手动触发一次更新以提高性能
- * @param revalidate 是否对数据进行验证,
- *
- */
 type MutateOption<T> = {
   optimisticData?: Cache<T>;
   revalidate?: boolean;
@@ -368,8 +333,6 @@ function mutateCache<T>(
     // if this cache dependent on other cache
     // we dit not support mutationFun/options
     if (cache.__deps && cache.__deps.size > 0) {
-      // 通知所有mount状态的组件重新验证数据
-      // broadcastCacheChange(cacheKey);
       if (CACHE_REVALIDATE_FUNCTION_POOL[cacheKey]) {
         Object.keys(CACHE_REVALIDATE_FUNCTION_POOL[cacheKey]).forEach((key) => {
           CACHE_REVALIDATE_FUNCTION_POOL[cacheKey][key]();
@@ -381,20 +344,16 @@ function mutateCache<T>(
 
     const _options = { ...DEFAULT_MUTATE_OPTIONS, ...(options || {}) };
 
-    // 乐观更新， 直接改变本地数据
     if (_options.optimisticData) {
       refreshCache(cacheKey, _options.optimisticData);
     }
 
     if (mutationFun) {
       mutationFun().then((nextCache) => {
-        // 1. 乐观更新时， 不需要返回值， 直接revalidate
-        // 2. 有的修改就没有返回值， 也直接revalidate
         if (!_options.optimisticData && nextCache) {
           refreshCache(cacheKey, nextCache);
         }
 
-        // 通知所有mount状态的组件重新验证数据
         if (CACHE_REVALIDATE_FUNCTION_POOL[cacheKey]) {
           Object.keys(CACHE_REVALIDATE_FUNCTION_POOL[cacheKey]).forEach(
             (key) => {
@@ -417,7 +376,6 @@ function mutateCache<T>(
         }
       });
     } else if (_options.revalidate) {
-      // 通知所有mount状态的组件重新验证数据
       if (CACHE_REVALIDATE_FUNCTION_POOL[cacheKey]) {
         Object.keys(CACHE_REVALIDATE_FUNCTION_POOL[cacheKey]).forEach((key) => {
           CACHE_REVALIDATE_FUNCTION_POOL[cacheKey][key]();
