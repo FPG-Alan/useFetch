@@ -1,5 +1,6 @@
 import useFetch, { mutateCache } from "./useFetch";
-import { deleteCache } from "./cache";
+import { deleteCache, readCache } from "./cache";
 
-export { mutateCache, deleteCache };
+export { mutateCache, deleteCache, readCache };
+
 export default useFetch;

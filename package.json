@@ -1,5 +1,5 @@
 {
-  "name": "ts-lib-starter",
+  "name": "use-fetch",
   "version": "1.0.0",
   "description": "",
   "main": "dist/lib.js",
@@ -52,6 +52,7 @@
     "@types/lodash-es": "^4.17.9",
     "@types/react": "^18.2.25",
     "@types/react-dom": "^18.2.13",
+    "dist": "link:C:/Users/FPG/Documents/projects/useFetch/dist",
     "fast-equals": "^5.0.1",
     "lodash-es": "^4.17.21",
     "react": "^18.2.0",

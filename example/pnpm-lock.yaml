@@ -8,6 +8,12 @@ dependencies:
   lib:
     specifier: link:..
     version: link:..
+  openapi-fetch:
+    specifier: ^0.7.10
+    version: 0.7.10
+  openapi-typescript-helpers:
+    specifier: ^0.0.4
+    version: 0.0.4
   react:
     specifier: ^18.2.0
     version: 18.2.0
@@ -1210,6 +1216,16 @@ packages:
     dependencies:
       wrappy: 1.0.2
     dev: true
+
+  /openapi-fetch@0.7.10:
+    resolution: {integrity: sha512-lDZkHjSxBuSTPXkJuJ9kSpkLxY9jgsVHbKkhS7rukoKi5et5QUlWCEzO/E6PaSHTQkJDPOjXdBJeDOSj2e8QwQ==}
+    dependencies:
+      openapi-typescript-helpers: 0.0.4
+    dev: false
+
+  /openapi-typescript-helpers@0.0.4:
+    resolution: {integrity: sha512-Q0MTapapFAG993+dx8lNw33X6P/6EbFr31yNymJHq56fNc6dODyRm8tWyRnGxuC74lyl1iCRMV6nQCGQsfVNKg==}
+    dev: false
 
   /optionator@0.9.3:
     resolution: {integrity: sha512-JjCoypp+jKn1ttEFExxhetCKeJt9zhAgAve5FXHixTvFDW/5aEktX9bufBKLRRMdU7bNtpLfcGu94B3cdEJgjg==}

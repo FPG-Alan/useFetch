@@ -10,9 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "lib": "link:..",
+    "openapi-fetch": "^0.7.10",
+    "openapi-typescript-helpers": "^0.0.4",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "lib": "link:.."
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.15",

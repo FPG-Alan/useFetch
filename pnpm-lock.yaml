@@ -14,6 +14,9 @@ dependencies:
   '@types/react-dom':
     specifier: ^18.2.13
     version: 18.2.13
+  dist:
+    specifier: link:C:/Users/FPG/Documents/projects/useFetch/dist
+    version: link:dist
   fast-equals:
     specifier: ^5.0.1
     version: 5.0.1
