@@ -122,38 +122,51 @@ function useFetch<T>(
         });
       }
 
+      // set fulfill as false
+      const cache = readCache(cacheKey);
+      cache["__fulfilled"] = false;
       return promise
         .then((data) => {
           if (_options.relation) {
-            for (const {
-              path,
-              cacheKey: fineGrainedCacheKey,
-            } of _options.relation(data)) {
-              const fineGrainedData = get(data, path);
+            // const cache = readCache(key);
 
-              // get, or create fine grained cache
-              const innerCache = readCache<unknown>(fineGrainedCacheKey);
-              // connect finegrained cache and current cache
-              if (!cache.__deps) {
-                cache.__deps = new Set();
+            let _data = cache.data;
+            if (!cache["__fulfilled"]) {
+              // begin fulfill
+              for (const {
+                path,
+                cacheKey: fineGrainedCacheKey,
+              } of _options.relation(data)) {
+                const fineGrainedData = get(data, path);
+
+                // get, or create fine grained cache
+                const innerCache = readCache<unknown>(fineGrainedCacheKey);
+                // connect finegrained cache and current cache
+                if (!cache.__deps) {
+                  cache.__deps = new Set();
+                }
+                cache.__deps?.add(fineGrainedCacheKey);
+
+                if (!innerCache.__parents) {
+                  innerCache.__parents = new Set();
+                }
+                innerCache.__parents.add(cacheKey);
+
+                // console.log("refresh fine grained cache", fineGrainedData);
+                // refresh fine grained cache
+                refreshCache(fineGrainedCacheKey, {
+                  ...innerCache,
+                  loading: false,
+                  data: fineGrainedData,
+                });
+
+                set(data as any as object, path, {
+                  __cache_key__: fineGrainedCacheKey,
+                });
               }
-              cache.__deps?.add(fineGrainedCacheKey);
-
-              if (!innerCache.__parents) {
-                innerCache.__parents = new Set();
-              }
-              innerCache.__parents.add(cacheKey);
-
-              // console.log("refresh fine grained cache", fineGrainedData);
-              // refresh fine grained cache
-              refreshCache(fineGrainedCacheKey, {
-                ...innerCache,
-                loading: false,
-                data: fineGrainedData,
-              });
-              set(data as any as object, path, {
-                __cache_key__: fineGrainedCacheKey,
-              });
+              _data = data;
+              // mark as fulfilled
+              cache["__fulfilled"] = true;
             }
 
             // only care about loading, data is just pointer(under fine grained mode)
@@ -162,7 +175,7 @@ function useFetch<T>(
               {
                 ...cache,
                 loading: false,
-                data,
+                data: _data,
               },
               stateDependencies.current.data ||
                 stateDependencies.current.loading

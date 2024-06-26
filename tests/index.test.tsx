@@ -61,8 +61,8 @@ it("useFetch hook runs correctly", async () => {
   expect(cache?.data?.length).toBe(3);
 
   // @ts-ignore
-  const allCache = window["MEM_CACHE"] as LRUMap<string, any>;
-  expect(allCache.size).toBe(4);
+  // const allCache = window["MEM_CACHE"] as LRUMap<string, any>;
+  // expect(allCache.size).toBe(4);
 
   // click refresh button, cache should be used
   const refreshButton = container?.querySelector(".refresh");

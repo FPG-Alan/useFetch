@@ -21,6 +21,8 @@ export type Cache<T> = {
    */
   __deps?: Set<string>;
   __parents?: Set<string>;
+
+  __fulfilled?: boolean;
 };
 export const EMPTY_CACHE: Cache<unknown> = {
   data: null,
