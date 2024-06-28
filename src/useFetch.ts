@@ -127,12 +127,10 @@ function useFetch<T>(
       cache["__fulfilled"] = false;
       return promise
         .then((data) => {
-          if (_options.relation) {
-            // const cache = readCache(key);
-
-            let _data = cache.data;
-            if (!cache["__fulfilled"]) {
-              // begin fulfill
+          // only handle first resolve during multi resolves for same promise
+          if (!cache["__fulfilled"]) {
+            // begin fulfill
+            if (_options.relation) {
               for (const {
                 path,
                 cacheKey: fineGrainedCacheKey,
@@ -151,7 +149,6 @@ function useFetch<T>(
                   innerCache.__parents = new Set();
                 }
                 innerCache.__parents.add(cacheKey);
-
                 // console.log("refresh fine grained cache", fineGrainedData);
                 // refresh fine grained cache
                 refreshCache(fineGrainedCacheKey, {
@@ -160,27 +157,14 @@ function useFetch<T>(
                   data: fineGrainedData,
                 });
 
+                // data is just pointer(under fine grained mode)
                 set(data as any as object, path, {
                   __cache_key__: fineGrainedCacheKey,
                 });
               }
-              _data = data;
-              // mark as fulfilled
-              cache["__fulfilled"] = true;
             }
 
-            // only care about loading, data is just pointer(under fine grained mode)
-            refreshCache(
-              cacheKey,
-              {
-                ...cache,
-                loading: false,
-                data: _data,
-              },
-              stateDependencies.current.data ||
-                stateDependencies.current.loading
-            );
-          } else {
+            // finish fulfill
             refreshCache(
               cacheKey,
               {
@@ -191,6 +175,7 @@ function useFetch<T>(
               stateDependencies.current.data ||
                 stateDependencies.current.loading
             );
+            cache["__fulfilled"] = true;
           }
         })
         .catch((reason: unknown) => {
