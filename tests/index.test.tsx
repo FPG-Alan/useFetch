@@ -72,7 +72,11 @@ it("useFetch hook runs correctly", async () => {
 
   // on second refresh, the cache should be used
   const psAfterRefresh = container?.querySelectorAll("p");
+  const totalAfterRefresh = container?.querySelector(".total");
+  const completedAfterRefresh = container?.querySelector(".completed");
   expect(psAfterRefresh?.length).toBe(3);
+  expect(totalAfterRefresh?.innerHTML).toBe("total : 3");
+  expect(completedAfterRefresh?.innerHTML).toBe("completed : 0");
 
   // click delete button
   const deleteButton = container?.querySelector(".delete");
@@ -82,7 +86,25 @@ it("useFetch hook runs correctly", async () => {
   await act(() => sleep(200));
   // on second refresh, the cache should be used
   const psAfterDelete = container?.querySelectorAll("p");
+  const totalAfterDelete = container?.querySelector(".total");
+  const completedAfterDelete = container?.querySelector(".completed");
   expect(psAfterDelete?.length).toBe(2);
+  expect(totalAfterDelete?.innerHTML).toBe("total : 2");
+  expect(completedAfterDelete?.innerHTML).toBe("completed : 0");
+
+  // click done button
+  const doneButton = container?.querySelector(".done");
+  await act(() => {
+    doneButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+  await act(() => sleep(200));
+  // on second refresh, the cache should be used
+  const psAfterDone = container?.querySelectorAll("p");
+  const totalAfterDone = container?.querySelector(".total");
+  const completedAfterDone = container?.querySelector(".completed");
+  expect(psAfterDone?.length).toBe(2);
+  expect(totalAfterDone?.innerHTML).toBe("total : 2");
+  expect(completedAfterDone?.innerHTML).toBe("completed : 1");
 });
 
 type Todo = {
@@ -184,6 +206,38 @@ function App() {
           </button>
         </p>
       ))}
+      <Statistics />
     </div>
+  );
+}
+
+function Statistics() {
+  const [cache] = useFetch<Array<Todo>>(
+    API,
+    (api) => {
+      return new Promise((resolve) => {
+        resolve(cloneDeep(FAKE));
+      });
+    },
+    {
+      relation: function* (data) {
+        for (let i = 0, l = data.length; i < l; i += 1) {
+          yield { path: i.toString(), cacheKey: `users/1/todos/${data[i].id}` };
+        }
+      },
+    }
+  );
+
+  if (cache.loading) {
+    return <p>loading</p>;
+  }
+
+  return (
+    <>
+      <div className="total">total : {cache.data?.length || 0}</div>
+      <div className="completed">
+        completed : {cache.data?.filter((item) => item.completed).length || 0}
+      </div>
+    </>
   );
 }
